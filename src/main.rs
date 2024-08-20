@@ -25,7 +25,7 @@ struct SiteCert {
 }
 
 #[derive(Deserialize, Debug)]
-struct Configuration {
+struct Network {
     name: String,
     email: String,
     country: Option<String>,
@@ -35,7 +35,11 @@ struct Configuration {
 
     root_ca_key: String,
     root_ca_crt: String,
+}
 
+#[derive(Deserialize, Debug)]
+struct Config {
+    network: Network,
     site_certs: HashMap<String, SiteCert>,
 }
 
@@ -67,12 +71,12 @@ fn read_key<T: AsRef<str>>(path: T) -> Result<PKey<Private>> {
 }
 
 fn main() -> Result<()> {
-    let config_text = std::fs::read("certgen.cfg")?;
-    let config: &Configuration = &serde_json::from_slice(&config_text)?;
+    let toml_str = std::fs::read_to_string("certgen.toml")?;
+    let config: Config = toml::from_str(&toml_str)?;
 
-    let ca_pkey = read_key(&config.root_ca_key)?;
+    let ca_pkey = read_key(&config.network.root_ca_key)?;
 
-    let ca_cert = X509::from_pem(&std::fs::read(&config.root_ca_crt)?)?;
+    let ca_cert = X509::from_pem(&std::fs::read(&config.network.root_ca_crt)?)?;
     let ca_subject_name = ca_cert.subject_name();
 
     for (site_name, site_cfg) in &config.site_certs {
@@ -87,16 +91,16 @@ fn main() -> Result<()> {
 
         let mut name_builder = openssl::x509::X509NameBuilder::new()?;
         name_builder.append_entry_by_nid(Nid::COMMONNAME, &site_name)?;
-        name_builder.append_entry_by_nid(Nid::PKCS9_EMAILADDRESS, &config.email)?;
-        name_builder.append_entry_by_nid(Nid::ORGANIZATIONNAME, &config.name)?;
+        name_builder.append_entry_by_nid(Nid::PKCS9_EMAILADDRESS, &config.network.email)?;
+        name_builder.append_entry_by_nid(Nid::ORGANIZATIONNAME, &config.network.name)?;
         name_builder.append_entry_by_nid(
             Nid::ORGANIZATIONALUNITNAME,
             site_cfg.name.as_ref().unwrap_or(&site_name),
         )?;
-        if let Some(country) = config.country.as_ref() {
+        if let Some(country) = config.network.country.as_ref() {
             name_builder.append_entry_by_nid(Nid::COUNTRYNAME, country)?;
         }
-        if let Some(province) = config.province.as_ref() {
+        if let Some(province) = config.network.province.as_ref() {
             name_builder.append_entry_by_nid(Nid::STATEORPROVINCENAME, province)?;
         }
 
@@ -118,7 +122,9 @@ fn main() -> Result<()> {
         // Set validity period
         let not_before = openssl::asn1::Asn1Time::days_from_now(0)?;
         let not_after = openssl::asn1::Asn1Time::days_from_now(
-            site_cfg.max_age_days.unwrap_or(config.default_max_age_days),
+            site_cfg
+                .max_age_days
+                .unwrap_or(config.network.default_max_age_days),
         )?;
         x509_builder.set_not_before(&not_before)?;
         x509_builder.set_not_after(&not_after)?;

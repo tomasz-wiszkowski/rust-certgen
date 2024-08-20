@@ -1,0 +1,25 @@
+[network]
+    # Shown as 'Organization' for which the certificates are issued.
+    name = "My Network"
+    # Your email address. Embedded in the certificate, no other uses.
+    email = "my.email@gmail.com"
+    # Optional location where the certificates are deployed.
+    country = "US"
+    province = "WA"
+    # Careful when tuning this: browsers get grumpy when certificate validity is too long.
+    default_max_age_days = 730
+
+    root_ca_key = "./root_ca.key"
+    root_ca_crt = "./root_ca.crt"
+
+[site_certs."srv.domainname.net"]
+    # Optional name.
+    name = "Server"
+    # Optional certificate validity length.
+    max_age_days = 365
+    alt_names = ["backup.domainname.net", "srv", "backup", "192.168.0.2"]
+
+[site_certs."dns.domainname.net"]
+    # Certificate will be issued for 'dns.domainname.net', valid for 730 days.
+    alt_names = ["dns", "192.168.0.3"]
+

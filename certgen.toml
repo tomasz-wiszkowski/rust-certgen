@@ -6,20 +6,25 @@
     # Optional location where the certificates are deployed.
     country = "US"
     province = "WA"
-    # Careful when tuning this: browsers get grumpy when certificate validity is too long.
-    default_max_age_days = 730
 
-    root_ca_key = "./root_ca.key"
-    root_ca_crt = "./root_ca.crt"
+    # Whether creating a new, or using an existing certificate authority,
+    # this specifies the prefix of a certificate and a key.
+    # - Certificate needs a ".crt" suffix, and
+    # - Key needs a ".key" suffix.
+    root_ca_name = "personal_ca"
+    # When generating a new root_ca, this specifies its validity duration.
+    # Safe to leave empty and use defaults.
+    root_ca_validity_days = 3650
 
-[site_certs."srv.domainname.net"]
+[sites."srv.domainname.net"]
     # Optional name.
     name = "Server"
-    # Optional certificate validity length.
-    max_age_days = 365
+    # Optional certificate validity length. Note that sites with unusually
+    # long expiration dates (>2 years) will likely be flagged by most browsers.
+    crt_validity_days = 365
     alt_names = ["backup.domainname.net", "srv", "backup", "192.168.0.2"]
 
-[site_certs."dns.domainname.net"]
-    # Certificate will be issued for 'dns.domainname.net', valid for 730 days.
+[sites."dns.domainname.net"]
+    name = "PiHole"
     alt_names = ["dns", "192.168.0.3"]
 

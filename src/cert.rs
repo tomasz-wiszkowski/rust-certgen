@@ -4,6 +4,7 @@
 //! and certificate management. The module uses OpenSSL for cryptographic operations.
 
 use anyhow::{Context, Result};
+use log::info;
 use openssl::{
     asn1::Asn1Time,
     hash::MessageDigest,
@@ -58,6 +59,7 @@ impl CertificateBuilder {
 
     /// Builds the certificate.
     pub fn build(self) -> Certificate {
+        info!("Generating certificate");
         Certificate(self.0.build(), self.1)
     }
 
@@ -134,24 +136,27 @@ impl Certificate {
         let crt_path = format!("{}.crt", name);
         let key_path = format!("{}.key", name);
 
+        let key = Key::load(&key_path)?;
+
+        info!("Reading certificate file: {}", crt_path);
         let crt = X509::from_pem(
             &std::fs::read(&crt_path)
                 .context(format!("Error loading certificate file {}", &crt_path))?,
         )?;
-
-        let key = Key::load(&key_path)?;
-
+        info!("Certificate read OK");
         Ok(Self(crt, key))
     }
 
     /// Saves a certificate and its corresponding key to files.
     pub fn save(&self, name: &str) -> Result<()> {
         self.1.save(&format!("{}.key", name))?;
+        info!("Writing certificate {}.crt", name);
         Ok(std::fs::write(&format!("{}.crt", &name), self.0.to_pem()?)?)
     }
 
     /// Signs another certificate using this certificate's key.
     pub fn sign(&self, builder: &mut CertificateBuilder) -> Result<()> {
+        info!("Signing certificate");
         builder
             .sign(&self.1, MessageDigest::sha256())
             .map_err(Into::into)

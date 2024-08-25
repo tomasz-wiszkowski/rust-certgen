@@ -2,6 +2,8 @@
 
 use std::io::{self, Write};
 
+use colored::Colorize;
+
 /// Prompts the user for confirmation and returns their response as a boolean.
 ///
 /// # Arguments
@@ -25,7 +27,7 @@ use std::io::{self, Write};
 /// ```
 pub fn confirm(prompt: &str) -> bool {
     let mut response = String::new();
-    print!("{} (y/N): ", prompt);
+    print!("{} (y/N): ", prompt.bold());
     io::stdout().flush().unwrap();
     io::stdin().read_line(&mut response).unwrap();
 

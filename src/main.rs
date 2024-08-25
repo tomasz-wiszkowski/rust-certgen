@@ -5,11 +5,15 @@ mod console;
 mod key;
 
 use std::collections::HashMap;
+use std::io::Write;
 use std::ops::Deref;
 
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
+use colored::*;
+use log::info;
+
 use openssl::nid::Nid;
 use openssl::x509::X509Name;
 use serde::Deserialize;
@@ -102,19 +106,21 @@ impl Network {
     }
 }
 
-fn load_or_generate_root_ca(net: &Network) -> Result<Certificate> {
+fn load_or_generate_ca_cert(net: &Network) -> Result<Certificate> {
     if let Ok(crt) = Certificate::load(&net.root_ca_name) {
+        info!("Certificate Authority read OK");
         return Ok(crt);
     }
 
+    info!("Certificate auhtority does not exist");
     if !confirm(&format!(
-        "Certificate {} does not exist. Create new one?",
+        "Certificate {} does not exist. Generate a new one?",
         net.root_ca_name
     )) {
         bail!("Aborted by user");
     }
 
-    let key = Key::load_or_generate(&net.root_ca_name)?;
+    let key = Key::load_or_generate(&format!("{}.key", net.root_ca_name))?;
     let mut crt = CertificateBuilder::new(key)?;
     let subject = net.build_subject_name(None)?;
 
@@ -130,6 +136,20 @@ fn load_or_generate_root_ca(net: &Network) -> Result<Certificate> {
 }
 
 fn main() -> Result<()> {
+    env_logger::Builder::from_default_env()
+        .format_target(false)
+        .format(|buf, record| {
+            let style = buf.default_level_style(record.level()).dimmed();
+            writeln!(
+                buf,
+                "{style}[{:1.1}] {}{style:#}",
+                record.level(),
+                record.args()
+            )
+        })
+        .init();
+
+    info!("Reading configuration file: {}", CONFIG_FILE_NAME);
     let toml_str = std::fs::read_to_string(CONFIG_FILE_NAME).context(format!(
         "Unable to read configuration file {}",
         CONFIG_FILE_NAME
@@ -137,7 +157,7 @@ fn main() -> Result<()> {
     let config: Config = toml::from_str(&toml_str)?;
 
     let network = Network(config.network);
-    let ca_cert = load_or_generate_root_ca(&network)?;
+    let ca_cert = load_or_generate_ca_cert(&network)?;
 
     for (site_name, site_cfg) in config.sites {
         let site = Site(site_name, site_cfg);

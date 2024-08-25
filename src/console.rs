@@ -2,7 +2,7 @@
 
 use std::io::{self, Write};
 
-use colored::Colorize;
+use anyhow::Result;
 
 /// Prompts the user for confirmation and returns their response as a boolean.
 ///
@@ -27,9 +27,13 @@ use colored::Colorize;
 /// ```
 pub fn confirm(prompt: &str) -> bool {
     let mut response = String::new();
-    print!("{} (y/N): ", prompt.bold());
+    print!("{} (y/N): ", prompt);
     io::stdout().flush().unwrap();
     io::stdin().read_line(&mut response).unwrap();
 
     response.trim().to_lowercase().starts_with('y')
+}
+
+pub fn ask_passphrase(prompt: &str) -> Result<String> {
+    Ok(rpassword::prompt_password(prompt)?)
 }

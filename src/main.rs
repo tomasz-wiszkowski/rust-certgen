@@ -11,7 +11,6 @@ use std::ops::Deref;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
-use colored::*;
 use log::info;
 
 use openssl::nid::Nid;

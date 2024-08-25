@@ -11,19 +11,14 @@ use anyhow::{bail, Context, Result};
 use log::info;
 use openssl::pkey::{PKey, Private};
 use openssl::rsa::Rsa;
+use openssl::symm::Cipher;
+
+use crate::console::ask_passphrase;
 
 use super::console::confirm;
 
 /// Represents an RSA private key.
 pub struct Key(PKey<Private>);
-
-impl TryFrom<Rsa<Private>> for Key {
-    type Error = openssl::error::ErrorStack;
-
-    fn try_from(value: Rsa<Private>) -> Result<Self, Self::Error> {
-        Ok(Self(PKey::from_rsa(value)?))
-    }
-}
 
 impl Deref for Key {
     type Target = PKey<Private>;
@@ -39,16 +34,39 @@ impl Key {
         let pem_data =
             std::fs::read(path).with_context(|| format!("Error loading key file {}", path))?;
         let rsa = Rsa::private_key_from_pem(&pem_data)?;
+
         info!("Key file read OK");
-        Ok(rsa.try_into()?)
+        Ok(Self(PKey::from_rsa(rsa)?))
     }
 
     /// Saves the RSA private key to a PEM file.
-    pub fn save(&self, path: &str) -> Result<()> {
-        info!("Writing key file: {}", path);
+    pub fn save(&mut self, path: &str) -> Result<()> {
+        let mut passphrase = None;
+        loop {
+            let passphrase1 = ask_passphrase("Enter passphrase: ")?;
+            if passphrase1.is_empty() {
+                break;
+            }
+            let passphrase2 = ask_passphrase("Confirm passphrase: ")?;
+
+            if passphrase1 == passphrase2 {
+                passphrase = Some(passphrase1);
+                break;
+            }
+            println!("Entered passphrases do not match.");
+        }
+
         let mut private_key_file = File::create(path)?;
-        let pem_data = self.0.private_key_to_pem_pkcs8()?;
+        let pem_data = if let Some(passphrase) = passphrase {
+            info!("Writing encrypted key file: {}", path);
+            self.0
+                .private_key_to_pem_pkcs8_passphrase(Cipher::aes_256_cbc(), passphrase.as_bytes())?
+        } else {
+            info!("Writing key file: {}", path);
+            self.0.private_key_to_pem_pkcs8()?
+        };
         private_key_file.write_all(&pem_data)?;
+
         Ok(())
     }
 
@@ -56,7 +74,7 @@ impl Key {
     pub fn generate() -> Result<Self> {
         info!("Generating a new RSA key");
         let rsa = Rsa::generate(2048)?;
-        Ok(rsa.try_into()?)
+        Ok(Self(PKey::from_rsa(rsa)?))
     }
 
     /// Loads an existing RSA private key or generates a new one if it doesn't exist.
@@ -71,6 +89,8 @@ impl Key {
             bail!("Canceled by user");
         }
 
-        Self::generate()
+        let mut key = Self::generate()?;
+        key.save(path)?;
+        Ok(key)
     }
 }

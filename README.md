@@ -40,9 +40,3 @@ All keys and generated certificates are owned by you. You are the only person re
 ### Why is everything warning me against installation?
 
 This is because you are technically installing a certificate that has the power of "blessing" domains as "secure". Normally this is controlled by a set of _truly trusted_ set of Root Certifcate Authorities (CAs). Your self-generated CA is now joining the club, and it is granted the same capability as all the other, pre-selected Root CAs. If your `root_ca.key` leaks **your security will be compromised**, and the owner may generate certificates and impersonate any website they want. Because of this you have to keep all the keys in secure store.
-
-
-## TODOs
-
-* Clean up the code,
-* Add password to guard the `root_ca.key`.

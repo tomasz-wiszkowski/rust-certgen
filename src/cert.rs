@@ -149,7 +149,6 @@ impl Certificate {
 
     /// Saves a certificate and its corresponding key to files.
     pub fn save(&self, name: &str) -> Result<()> {
-        self.1.save(&format!("{}.key", name))?;
         info!("Writing certificate {}.crt", name);
         Ok(std::fs::write(&format!("{}.crt", &name), self.0.to_pem()?)?)
     }

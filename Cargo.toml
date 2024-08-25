@@ -11,5 +11,6 @@ colored = "2"
 env_logger = "0.11"
 log = "0.4"
 openssl = { version = "0.10.66", features = ["vendored"]}
+rpassword = "7.3.1"
 serde = { version = "1.0.208", features = ["derive"] }
 toml = "0.8.19"

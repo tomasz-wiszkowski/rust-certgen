@@ -23,6 +23,8 @@ use console::confirm;
 use key::Key;
 
 const CONFIG_FILE_NAME: &str = "certgen.toml";
+/// Site certificates within this many days of expiring are renewed.
+const RENEWAL_THRESHOLD_DAYS: u32 = 90;
 
 #[derive(Deserialize, Debug)]
 struct Config {
@@ -121,6 +123,7 @@ fn load_or_generate_ca_cert(net: &Network) -> Result<Certificate> {
 
     let key = Key::load_or_generate(&format!("{}.key", net.root_ca_name))?;
     let mut crt = CertificateBuilder::new(key)?;
+    crt.set_serial_number(1)?;
     let subject = net.build_subject_name(None)?;
 
     crt.set_issuer_name(&subject)?;
@@ -161,9 +164,38 @@ fn main() -> Result<()> {
     for (site_name, site_cfg) in config.sites {
         let site = Site(site_name, site_cfg);
 
+        let next_serial = match Certificate::load_cert_only(&site.0) {
+            Ok(existing) => {
+                let serial = cert::serial_number(&existing)?;
+                if !cert::expires_within(&existing, RENEWAL_THRESHOLD_DAYS)? {
+                    info!(
+                        "Certificate {} (serial {}) does not expire within {} days; skipping renewal",
+                        site.0, serial, RENEWAL_THRESHOLD_DAYS
+                    );
+                    continue;
+                }
+                info!(
+                    "Certificate {} (serial {}) expires within {} days; renewing as serial {}",
+                    site.0,
+                    serial,
+                    RENEWAL_THRESHOLD_DAYS,
+                    serial + 1
+                );
+                serial + 1
+            }
+            Err(_) => {
+                info!(
+                    "No existing certificate for {}; generating new certificate (serial 1)",
+                    site.0
+                );
+                1
+            }
+        };
+
         let site_key = Key::load_or_generate(&format!("{}.key", &site.0))?;
         let site_crt = CertificateBuilder::new(site_key)?;
         let mut site_crt = site_crt.set_server_auth()?;
+        site_crt.set_serial_number(next_serial)?;
 
         // Set issuer and subject name
         let subject = network.build_subject_name(Some(&site))?;

@@ -7,13 +7,27 @@ use anyhow::{Context, Result};
 use log::info;
 use openssl::{
     asn1::Asn1Time,
+    bn::BigNum,
     hash::MessageDigest,
-    x509::{X509Builder, X509},
+    x509::{X509Builder, X509Ref, X509},
 };
+use std::cmp::Ordering;
 use std::net::IpAddr;
 use std::ops::{Deref, DerefMut};
 
 use crate::key::Key;
+
+/// Returns a certificate's serial number.
+pub fn serial_number(cert: &X509Ref) -> Result<u32> {
+    let serial = cert.serial_number().to_bn()?.to_dec_str()?.parse()?;
+    Ok(serial)
+}
+
+/// Returns true if the certificate expires within `days` days from now.
+pub fn expires_within(cert: &X509Ref, days: u32) -> Result<bool> {
+    let threshold = Asn1Time::days_from_now(days)?;
+    Ok(cert.not_after().compare(threshold.as_ref())? != Ordering::Greater)
+}
 
 /// A builder for X.509 certificates.
 pub struct CertificateBuilder(X509Builder, Key);
@@ -40,6 +54,12 @@ impl CertificateBuilder {
         builder.set_pubkey(&key)?;
 
         Ok(Self(builder, key))
+    }
+
+    /// Sets the certificate's serial number.
+    pub fn set_serial_number(&mut self, serial: u32) -> Result<()> {
+        let asn1_serial = BigNum::from_u32(serial)?.to_asn1_integer()?;
+        self.0.set_serial_number(&asn1_serial).map_err(Into::into)
     }
 
     /// Sets the validity period for the certificate.
@@ -136,6 +156,18 @@ impl Deref for Certificate {
 }
 
 impl Certificate {
+    /// Loads just the certificate portion (not the key) from file, e.g. to inspect
+    /// its serial number or expiry without needing (and possibly having to decrypt) the key.
+    pub fn load_cert_only(name: &str) -> Result<X509> {
+        let crt_path = format!("{}.crt", name);
+        info!("Reading certificate file: {}", crt_path);
+        let crt = X509::from_pem(
+            &std::fs::read(&crt_path)
+                .context(format!("Error loading certificate file {}", &crt_path))?,
+        )?;
+        Ok(crt)
+    }
+
     /// Loads a certificate and its corresponding key from files.
     pub fn load(name: &str) -> Result<Self> {
         let crt_path = format!("{}.crt", name);

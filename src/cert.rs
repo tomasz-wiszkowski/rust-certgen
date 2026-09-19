@@ -10,6 +10,7 @@ use openssl::{
     hash::MessageDigest,
     x509::{X509Builder, X509},
 };
+use std::net::IpAddr;
 use std::ops::{Deref, DerefMut};
 
 use crate::key::Key;
@@ -107,7 +108,11 @@ impl SiteCertificateBuilder {
     pub fn set_subject_alt_names(&mut self, alt_names: &[String]) -> Result<()> {
         let mut san = openssl::x509::extension::SubjectAlternativeName::new();
         alt_names.iter().for_each(|name| {
-            san.dns(name);
+            if name.parse::<IpAddr>().is_ok() {
+                san.ip(name);
+            } else {
+                san.dns(name);
+            }
         });
         let extension = san.build(&self.x509v3_context(None, None))?;
         self.append_extension(extension).map_err(Into::into)

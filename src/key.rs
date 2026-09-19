@@ -28,12 +28,23 @@ impl Deref for Key {
 }
 
 impl Key {
-    /// Loads an RSA private key from a PEM file.
+    /// Loads an RSA private key from a PEM file, prompting for a passphrase if it is encrypted.
     pub fn load(path: &str) -> Result<Self> {
         info!("Reading key file: {}", path);
         let pem_data =
             std::fs::read(path).with_context(|| format!("Error loading key file {}", path))?;
-        let rsa = Rsa::private_key_from_pem(&pem_data)?;
+
+        let rsa = if String::from_utf8_lossy(&pem_data).contains("ENCRYPTED") {
+            loop {
+                let passphrase = ask_passphrase(&format!("Enter passphrase for {}: ", path))?;
+                match Rsa::private_key_from_pem_passphrase(&pem_data, passphrase.as_bytes()) {
+                    Ok(rsa) => break rsa,
+                    Err(e) => println!("Could not decrypt key: {}", e),
+                }
+            }
+        } else {
+            Rsa::private_key_from_pem(&pem_data)?
+        };
 
         info!("Key file read OK");
         Ok(Self(PKey::from_rsa(rsa)?))

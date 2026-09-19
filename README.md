@@ -10,6 +10,8 @@ All keys and generated certificates are owned by you. You are the only person re
   * Apply your desired defaults. Be mindful of setting the certificate validity - too long and it will be rejected by most browsers! 2 years seems safe.
   * Add your desired server names (and/or IP addresses).
 2. Run the tool (e.g. `cargo run`)
+  * By default, site certificates are only renewed once they're within 3 months of expiring, and the root CA is only created if it doesn't already exist.
+  * Pass `--force` (or `-f`) to forcibly recreate every certificate, including the root CA, right now regardless of expiry. This reuses the existing keys and only reissues the certificates, so previously issued certificates and any devices trusting the CA are unaffected.
 3. Preserve key files and the `root_ca.crt` file. These files will be used to identify fingerprint of your servers and generate updated certificates
 4. Deploy certificates to your devices
 5. Install the `root_ca.crt` on your systems:

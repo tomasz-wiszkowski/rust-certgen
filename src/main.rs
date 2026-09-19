@@ -107,23 +107,49 @@ impl Network {
     }
 }
 
-fn load_or_generate_ca_cert(net: &Network) -> Result<Certificate> {
-    if let Ok(crt) = Certificate::load(&net.root_ca_name) {
-        info!("Certificate Authority read OK");
-        return Ok(crt);
+fn load_or_generate_ca_cert(net: &Network, force: bool) -> Result<Certificate> {
+    if !force {
+        if let Ok(crt) = Certificate::load(&net.root_ca_name) {
+            info!("Certificate Authority read OK");
+            return Ok(crt);
+        }
+        info!("Certificate auhtority does not exist");
     }
 
-    info!("Certificate auhtority does not exist");
-    if !confirm(&format!(
-        "Certificate {} does not exist. Generate a new one?",
-        net.root_ca_name
-    )) {
+    let existing = Certificate::load_cert_only(&net.root_ca_name).ok();
+    let next_serial = match &existing {
+        Some(crt) => {
+            let serial = cert::serial_number(crt)?;
+            info!(
+                "Forcibly recreating Certificate Authority {} (serial {} -> {})",
+                net.root_ca_name,
+                serial,
+                serial + 1
+            );
+            serial + 1
+        }
+        None => 1,
+    };
+
+    let prompt = if existing.is_some() {
+        format!(
+            "Forcibly recreate Certificate Authority {}? This reuses the existing key but issues \
+             a brand new certificate.",
+            net.root_ca_name
+        )
+    } else {
+        format!(
+            "Certificate {} does not exist. Generate a new one?",
+            net.root_ca_name
+        )
+    };
+    if !confirm(&prompt) {
         bail!("Aborted by user");
     }
 
     let key = Key::load_or_generate(&format!("{}.key", net.root_ca_name))?;
     let mut crt = CertificateBuilder::new(key)?;
-    crt.set_serial_number(1)?;
+    crt.set_serial_number(next_serial)?;
     let subject = net.build_subject_name(None)?;
 
     crt.set_issuer_name(&subject)?;
@@ -154,6 +180,14 @@ fn main() -> Result<()> {
         })
         .init();
 
+    let mut force = false;
+    for arg in std::env::args().skip(1) {
+        match arg.as_str() {
+            "--force" | "-f" => force = true,
+            other => bail!("Unknown argument: {}\nUsage: certgen [--force|-f]", other),
+        }
+    }
+
     info!("Reading configuration file: {}", CONFIG_FILE_NAME);
     let toml_str = std::fs::read_to_string(CONFIG_FILE_NAME).context(format!(
         "Unable to read configuration file {}",
@@ -162,7 +196,7 @@ fn main() -> Result<()> {
     let config: Config = toml::from_str(&toml_str)?;
 
     let network = Network(config.network);
-    let ca_cert = load_or_generate_ca_cert(&network)?;
+    let ca_cert = load_or_generate_ca_cert(&network, force)?;
 
     for (site_name, site_cfg) in config.sites {
         let site = Site(site_name, site_cfg);
@@ -170,20 +204,29 @@ fn main() -> Result<()> {
         let next_serial = match Certificate::load_cert_only(&site.0) {
             Ok(existing) => {
                 let serial = cert::serial_number(&existing)?;
-                if !cert::expires_within(&existing, RENEWAL_THRESHOLD_DAYS)? {
+                if !force && !cert::expires_within(&existing, RENEWAL_THRESHOLD_DAYS)? {
                     info!(
                         "Certificate {} (serial {}) does not expire within {} days; skipping renewal",
                         site.0, serial, RENEWAL_THRESHOLD_DAYS
                     );
                     continue;
                 }
-                info!(
-                    "Certificate {} (serial {}) expires within {} days; renewing as serial {}",
-                    site.0,
-                    serial,
-                    RENEWAL_THRESHOLD_DAYS,
-                    serial + 1
-                );
+                if force {
+                    info!(
+                        "Forcibly recreating certificate {} (serial {} -> {})",
+                        site.0,
+                        serial,
+                        serial + 1
+                    );
+                } else {
+                    info!(
+                        "Certificate {} (serial {}) expires within {} days; renewing as serial {}",
+                        site.0,
+                        serial,
+                        RENEWAL_THRESHOLD_DAYS,
+                        serial + 1
+                    );
+                }
                 serial + 1
             }
             Err(_) => {

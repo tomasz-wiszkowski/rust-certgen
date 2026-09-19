@@ -13,6 +13,7 @@ use anyhow::Context;
 use anyhow::Result;
 use log::info;
 
+use openssl::bn::BigNum;
 use openssl::nid::Nid;
 use openssl::x509::X509Name;
 use serde::Deserialize;
@@ -119,16 +120,16 @@ fn load_or_generate_ca_cert(net: &Network, force: bool) -> Result<Certificate> {
     let existing = Certificate::load_cert_only(&net.root_ca_name).ok();
     let next_serial = match &existing {
         Some(crt) => {
-            let serial = cert::serial_number(crt)?;
+            let mut serial = cert::serial_number(crt)?;
+            let old = serial.to_string();
+            serial.add_word(1)?;
             info!(
                 "Forcibly recreating Certificate Authority {} (serial {} -> {})",
-                net.root_ca_name,
-                serial,
-                serial + 1
+                net.root_ca_name, old, serial
             );
-            serial + 1
+            serial
         }
-        None => 1,
+        None => BigNum::from_u32(1)?,
     };
 
     let prompt = if existing.is_some() {
@@ -149,7 +150,7 @@ fn load_or_generate_ca_cert(net: &Network, force: bool) -> Result<Certificate> {
 
     let key = Key::load_or_generate(&format!("{}.key", net.root_ca_name))?;
     let mut crt = CertificateBuilder::new(key)?;
-    crt.set_serial_number(next_serial)?;
+    crt.set_serial_number(&next_serial)?;
     let subject = net.build_subject_name(None)?;
 
     crt.set_issuer_name(&subject)?;
@@ -203,7 +204,7 @@ fn main() -> Result<()> {
 
         let next_serial = match Certificate::load_cert_only(&site.0) {
             Ok(existing) => {
-                let serial = cert::serial_number(&existing)?;
+                let mut serial = cert::serial_number(&existing)?;
                 if !force && !cert::expires_within(&existing, RENEWAL_THRESHOLD_DAYS)? {
                     info!(
                         "Certificate {} (serial {}) does not expire within {} days; skipping renewal",
@@ -211,37 +212,34 @@ fn main() -> Result<()> {
                     );
                     continue;
                 }
+                let old = serial.to_string();
+                serial.add_word(1)?;
                 if force {
                     info!(
                         "Forcibly recreating certificate {} (serial {} -> {})",
-                        site.0,
-                        serial,
-                        serial + 1
+                        site.0, old, serial
                     );
                 } else {
                     info!(
                         "Certificate {} (serial {}) expires within {} days; renewing as serial {}",
-                        site.0,
-                        serial,
-                        RENEWAL_THRESHOLD_DAYS,
-                        serial + 1
+                        site.0, old, RENEWAL_THRESHOLD_DAYS, serial
                     );
                 }
-                serial + 1
+                serial
             }
             Err(_) => {
                 info!(
                     "No existing certificate for {}; generating new certificate (serial 1)",
                     site.0
                 );
-                1
+                BigNum::from_u32(1)?
             }
         };
 
         let site_key = Key::load_or_generate(&format!("{}.key", &site.0))?;
         let site_crt = CertificateBuilder::new(site_key)?;
         let mut site_crt = site_crt.set_server_auth()?;
-        site_crt.set_serial_number(next_serial)?;
+        site_crt.set_serial_number(&next_serial)?;
         site_crt.set_server_key_usage()?;
         site_crt.set_subject_key_identifier()?;
         site_crt.set_authority_key_identifier(Some(&ca_cert))?;

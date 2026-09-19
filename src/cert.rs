@@ -7,7 +7,7 @@ use anyhow::{bail, Context, Result};
 use log::info;
 use openssl::{
     asn1::Asn1Time,
-    bn::BigNum,
+    bn::{BigNum, BigNumRef},
     hash::MessageDigest,
     x509::{X509Builder, X509Ref, X509},
 };
@@ -17,10 +17,11 @@ use std::ops::{Deref, DerefMut};
 
 use crate::key::Key;
 
-/// Returns a certificate's serial number.
-pub fn serial_number(cert: &X509Ref) -> Result<u32> {
-    let serial = cert.serial_number().to_bn()?.to_dec_str()?.parse()?;
-    Ok(serial)
+/// Returns a certificate's serial number. Real-world serials (including randomly generated
+/// ones, common practice for CAs) can be far larger than any fixed-size integer, so this stays
+/// in arbitrary-precision form rather than being downcast.
+pub fn serial_number(cert: &X509Ref) -> Result<BigNum> {
+    cert.serial_number().to_bn().map_err(Into::into)
 }
 
 /// Returns true if the certificate expires within `days` days from now.
@@ -57,8 +58,8 @@ impl CertificateBuilder {
     }
 
     /// Sets the certificate's serial number.
-    pub fn set_serial_number(&mut self, serial: u32) -> Result<()> {
-        let asn1_serial = BigNum::from_u32(serial)?.to_asn1_integer()?;
+    pub fn set_serial_number(&mut self, serial: &BigNumRef) -> Result<()> {
+        let asn1_serial = serial.to_asn1_integer()?;
         self.0.set_serial_number(&asn1_serial).map_err(Into::into)
     }
 

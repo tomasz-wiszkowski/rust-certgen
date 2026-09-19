@@ -3,7 +3,7 @@
 //! It includes structures for certificate building, site-specific certificate building,
 //! and certificate management. The module uses OpenSSL for cryptographic operations.
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use log::info;
 use openssl::{
     asn1::Asn1Time,
@@ -173,13 +173,24 @@ impl SiteCertificateBuilder {
     /// Sets the Subject Alternative Names for the certificate.
     pub fn set_subject_alt_names(&mut self, alt_names: &[String]) -> Result<()> {
         let mut san = openssl::x509::extension::SubjectAlternativeName::new();
-        alt_names.iter().for_each(|name| {
+        for name in alt_names {
             if name.parse::<IpAddr>().is_ok() {
                 san.ip(name);
+            } else if name.contains(':') {
+                // Not a valid IP (that branch already handles bare IPv6 literals), and a DNS
+                // name can never contain a colon, so this is almost certainly a host:port or
+                // ip:port typo. TLS certificates cannot be scoped to a port -- reject it instead
+                // of silently emitting a DNS SAN entry that will never match anything.
+                bail!(
+                    "Invalid alt_names entry {:?}: contains ':' but is not a valid IP address. \
+                     A certificate cannot be scoped to a port; remove it and list just the host \
+                     or IP.",
+                    name
+                );
             } else {
                 san.dns(name);
             }
-        });
+        }
         let extension = san.build(&self.x509v3_context(None, None))?;
         self.append_extension(extension).map_err(Into::into)
     }

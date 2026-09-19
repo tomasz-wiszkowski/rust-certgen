@@ -129,6 +129,9 @@ fn load_or_generate_ca_cert(net: &Network) -> Result<Certificate> {
     crt.set_issuer_name(&subject)?;
     crt.set_subject_name(&subject)?;
     crt.set_certificate_authority()?;
+    crt.set_ca_key_usage()?;
+    crt.set_subject_key_identifier()?;
+    crt.set_authority_key_identifier(None)?;
     crt.set_validity_period(net.root_ca_validity_days)?;
     crt.sign_self()?;
 
@@ -196,6 +199,9 @@ fn main() -> Result<()> {
         let site_crt = CertificateBuilder::new(site_key)?;
         let mut site_crt = site_crt.set_server_auth()?;
         site_crt.set_serial_number(next_serial)?;
+        site_crt.set_server_key_usage()?;
+        site_crt.set_subject_key_identifier()?;
+        site_crt.set_authority_key_identifier(Some(&ca_cert))?;
 
         // Set issuer and subject name
         let subject = network.build_subject_name(Some(&site))?;

@@ -84,15 +84,48 @@ impl CertificateBuilder {
         Certificate(self.0.build(), self.1)
     }
 
-    /// Sets the certificate as a Certificate Authority.
+    /// Sets the certificate as a Certificate Authority, restricted to signing leaf
+    /// certificates only (no intermediate CAs below it).
     pub fn set_certificate_authority(&mut self) -> Result<()> {
         self.0
             .append_extension(
                 openssl::x509::extension::BasicConstraints::new()
+                    .critical()
                     .ca()
+                    .pathlen(0)
                     .build()?,
             )
             .map_err(Into::into)
+    }
+
+    /// Sets the Key Usage extension for a Certificate Authority: signing certificates and CRLs.
+    pub fn set_ca_key_usage(&mut self) -> Result<()> {
+        self.0
+            .append_extension(
+                openssl::x509::extension::KeyUsage::new()
+                    .critical()
+                    .key_cert_sign()
+                    .crl_sign()
+                    .build()?,
+            )
+            .map_err(Into::into)
+    }
+
+    /// Sets the Subject Key Identifier extension: a hash of this certificate's own public key.
+    pub fn set_subject_key_identifier(&mut self) -> Result<()> {
+        let ski = openssl::x509::extension::SubjectKeyIdentifier::new()
+            .build(&self.x509v3_context(None, None))?;
+        self.append_extension(ski).map_err(Into::into)
+    }
+
+    /// Sets the Authority Key Identifier extension, identifying the key that signs this
+    /// certificate. Pass `None` for a self-signed certificate, or `Some(issuer)` when signed
+    /// by another CA.
+    pub fn set_authority_key_identifier(&mut self, issuer: Option<&X509Ref>) -> Result<()> {
+        let aki = openssl::x509::extension::AuthorityKeyIdentifier::new()
+            .keyid(true)
+            .build(&self.x509v3_context(issuer, None))?;
+        self.append_extension(aki).map_err(Into::into)
     }
 
     /// Configures the certificate for server authentication and returns a SiteCertificateBuilder.
@@ -124,6 +157,19 @@ impl Deref for SiteCertificateBuilder {
 }
 
 impl SiteCertificateBuilder {
+    /// Sets the Key Usage extension for a TLS server certificate: signing the handshake and,
+    /// for RSA keys, decrypting an encrypted key sent by the client.
+    pub fn set_server_key_usage(&mut self) -> Result<()> {
+        self.append_extension(
+            openssl::x509::extension::KeyUsage::new()
+                .critical()
+                .digital_signature()
+                .key_encipherment()
+                .build()?,
+        )
+        .map_err(Into::into)
+    }
+
     /// Sets the Subject Alternative Names for the certificate.
     pub fn set_subject_alt_names(&mut self, alt_names: &[String]) -> Result<()> {
         let mut san = openssl::x509::extension::SubjectAlternativeName::new();
